@@ -195,5 +195,11 @@ func GetURLs() data.CurrentURLS {
 	curURLs.MangaLib = strings.Split(tmpData["mangalib"], ", ")
 	curURLs.ReadManga = strings.Split(tmpData["readmanga"], ", ")
 
+	readMangaNewURL := "zx.readmanga.io"
+	readMangaUrls := curURLs.ReadManga
+	readMangaUrls = append(readMangaUrls, readMangaNewURL)
+
+	curURLs.ReadManga = readMangaUrls
+
 	return curURLs
 }

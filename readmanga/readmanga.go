@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -15,7 +16,6 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/cavaliergopher/grab/v3"
 	"github.com/goware/urlx"
-
 	"github.com/lirix360/ReadmangaGrabber/config"
 	"github.com/lirix360/ReadmangaGrabber/data"
 	"github.com/lirix360/ReadmangaGrabber/history"
@@ -119,6 +119,7 @@ func GetChaptersList(mangaURL string) ([]data.ChaptersList, []data.RMTranslators
 		transList = append(transList, trans)
 	})
 
+	logger.Log.Info("Chapter list:", chaptersList)
 	return tools.ReverseList(chaptersList), transList, isMtr, nil
 }
 
@@ -144,6 +145,22 @@ func DownloadManga(downData data.DownloadOpts) error {
 			}
 			chaptersList = append(chaptersList, chapter)
 		}
+
+		// Enriching chaptersList with information from rawChaptersList
+		var rawChaptersList []data.ChaptersList
+		rawChaptersList, _, _, err = GetChaptersList(downData.MangaURL)
+		if err != nil {
+			logger.Log.Error("Ошибка при получении списка глав:", err)
+			return err
+		}
+
+		for i := range chaptersList {
+			for _, raw := range rawChaptersList {
+				if chaptersList[i].Path == raw.Path {
+					chaptersList[i].Title = raw.Title
+				}
+			}
+		}
 	}
 
 	chaptersTotal := len(chaptersList)
@@ -159,6 +176,7 @@ func DownloadManga(downData data.DownloadOpts) error {
 	}
 
 	for _, chapter := range chaptersList {
+		logger.Log.Info(chapter)
 		volume := strings.Split(chapter.Path, "/")[0]
 
 		chSavedFiles, err := DownloadChapter(downData, chapter)
@@ -228,6 +246,14 @@ func DownloadManga(downData data.DownloadOpts) error {
 	return nil
 }
 
+func extractTitle(title string) string {
+	parts := strings.SplitN(title, " ", 4)
+	if len(parts) == 4 {
+		return parts[3]
+	}
+	return title
+}
+
 func DownloadChapter(downData data.DownloadOpts, curChapter data.ChaptersList) ([]string, error) {
 	var err error
 
@@ -242,6 +268,7 @@ func DownloadChapter(downData data.DownloadOpts, curChapter data.ChaptersList) (
 	chapterURL := strings.TrimRight(downData.MangaURL, "/") + "/" + curChapter.Path
 
 	var imageLinks []string
+	var chapterTitle string
 
 	ptOpt := ""
 	mtrOpt := ""
@@ -311,7 +338,20 @@ func DownloadChapter(downData data.DownloadOpts, curChapter data.ChaptersList) (
 		imageLinks = append(imageLinks, strings.Trim(tmpParts[0], "\"'")+strings.Trim(tmpParts[2], "\"'"))
 	}
 
-	chapterPath := path.Join(config.Cfg.Savepath, downData.SavePath, curChapter.Path)
+	chapterTitle = strings.Join([]string{strings.TrimSpace(curChapter.Path), strings.TrimSpace(curChapter.Title)}, " ")
+
+	re := regexp.MustCompile(`^(vol\d+/)(\d+)$`)
+	matches := re.FindStringSubmatch(curChapter.Path)
+	logger.Log.Debug("Chapter title matches:", matches)
+	if len(matches) == 3 {
+		formattedNum := fmt.Sprintf("%03s", matches[2])
+		newPath := matches[1] + formattedNum
+		// Формирование новой строки с требуемым форматом
+		chapterTitle = strings.Join([]string{strings.TrimSpace(newPath), extractTitle(curChapter.Title)}, " ")
+	}
+
+	chapterPath := path.Join(config.Cfg.Savepath, downData.SavePath, chapterTitle)
+	logger.Log.Info("Chapter title:", chapterTitle)
 
 	if _, err := os.Stat(chapterPath); os.IsNotExist(err) {
 		os.MkdirAll(chapterPath, 0755)
@@ -319,7 +359,9 @@ func DownloadChapter(downData data.DownloadOpts, curChapter data.ChaptersList) (
 
 	var savedFiles []string
 
-	for _, imgURL := range imageLinks {
+	for index, imgURL := range imageLinks {
+		progress := strings.Join([]string{fmt.Sprint(index + 1), fmt.Sprint(len(imageLinks))}, "/")
+		logger.Log.Debug("Downloading image:", progress, imgURL)
 		fileName, err := DlImage(imgURL, chapterPath, srvList, 0)
 		if err != nil {
 			data.WSChan <- data.WSData{

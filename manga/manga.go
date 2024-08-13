@@ -28,6 +28,9 @@ func GetChaptersList(w http.ResponseWriter, r *http.Request) {
 
 	mangaURL := strings.Split(url.String(), "?")[0]
 
+	logger.Log.Info("Allowed URLs:")
+	logger.Log.Info(config.Cfg.CurrentURLs.MangaLib)
+	logger.Log.Info(config.Cfg.CurrentURLs.ReadManga)
 	if slices.Contains(config.Cfg.CurrentURLs.MangaLib, host) {
 		rawChaptersList, err = mangalib.GetChaptersList(mangaURL)
 		if err != nil {
@@ -95,6 +98,7 @@ func DownloadManga(w http.ResponseWriter, r *http.Request) {
 		Del:       r.FormValue("optDEL"),
 		PrefTrans: r.FormValue("optPrefTrans"),
 	}
+	logger.Log.Info("Download opts:", downloadOpts)
 
 	url, _ := urlx.Parse(r.FormValue("mangaURL"))
 	host, _, _ := urlx.SplitHostPort(url)
